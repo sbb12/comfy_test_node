@@ -12,8 +12,13 @@ class ComfyVideoCombineError(RuntimeError):
     pass
 
 
+PACK_NAME = "Media Pack"
+VIDEO_CATEGORY = f"{PACK_NAME}/video"
+AUDIO_CATEGORY = f"{PACK_NAME}/audio"
+
+
 class VideoConcatenate:
-    CATEGORY = "video"
+    CATEGORY = VIDEO_CATEGORY
     RETURN_TYPES = ("VIDEO",)
     RETURN_NAMES = ("video",)
     FUNCTION = "concatenate"
@@ -79,8 +84,59 @@ class VideoConcatenate:
         return (video,)
 
 
+class VideoStartClip:
+    CATEGORY = VIDEO_CATEGORY
+    RETURN_TYPES = ("VIDEO", "IMAGE")
+    RETURN_NAMES = ("video", "images")
+    FUNCTION = "clip_video"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "source_video": ("VIDEO", {}),
+                "seconds": (
+                    "FLOAT",
+                    {
+                        "default": 1.0,
+                        "min": 0.0,
+                        "max": 36000.0,
+                        "step": 0.01,
+                        "display": "number",
+                    },
+                ),
+            },
+        }
+
+    def clip_video(self, source_video, seconds):
+        if InputImpl is None or Types is None:
+            raise ComfyVideoCombineError(
+                "ComfyUI's native video API is not available. Update ComfyUI to a "
+                "version with built-in VIDEO support."
+            )
+
+        components = source_video.get_components()
+        images = _validate_images(_rgb_images(components.images), "source_video")
+        frame_count = _duration_frame_count(
+            seconds,
+            components.frame_rate,
+            images.shape[0],
+        )
+        clipped_images = images[:frame_count]
+        audio = _audio_for_frames(components.audio, components.frame_rate, frame_count)
+
+        video = InputImpl.VideoFromComponents(
+            Types.VideoComponents(
+                images=clipped_images,
+                audio=audio,
+                frame_rate=_frame_rate(components.frame_rate),
+            )
+        )
+        return (video, clipped_images)
+
+
 class AudioSlice:
-    CATEGORY = "audio"
+    CATEGORY = AUDIO_CATEGORY
     RETURN_TYPES = ("AUDIO",)
     RETURN_NAMES = ("audio",)
     FUNCTION = "slice_audio"
@@ -179,6 +235,26 @@ def _overlap_frame_count(overlap_seconds, frame_rate, max_frames):
 
     fps = float(_frame_rate(frame_rate))
     return min(max_frames, round(overlap_seconds * fps))
+
+
+def _duration_frame_count(seconds, frame_rate, max_frames):
+    if seconds <= 0:
+        return max_frames
+
+    fps = float(_frame_rate(frame_rate))
+    return max(1, min(max_frames, round(seconds * fps)))
+
+
+def _audio_for_frames(audio, frame_rate, frame_count):
+    waveform, sample_rate = _audio_parts(audio)
+    if waveform is None:
+        return None
+
+    sample_count = _samples_for_frames(frame_count, frame_rate, sample_rate)
+    return {
+        "waveform": waveform[..., :sample_count],
+        "sample_rate": sample_rate,
+    }
 
 
 def _concatenate_audio(
@@ -325,9 +401,11 @@ def _torch_modules():
 NODE_CLASS_MAPPINGS = {
     "AudioSlice": AudioSlice,
     "VideoConcatenate": VideoConcatenate,
+    "VideoStartClip": VideoStartClip,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AudioSlice": "Slice Audio",
-    "VideoConcatenate": "Concatenate Videos",
+    "AudioSlice": "Media Pack - Slice Audio",
+    "VideoConcatenate": "Media Pack - Concatenate Videos",
+    "VideoStartClip": "Media Pack - Video Start Clip",
 }

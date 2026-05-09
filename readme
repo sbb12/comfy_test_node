@@ -2,6 +2,7 @@ ComfyUI Media Nodes
 ===================
 
 This custom node pack contains small native ComfyUI video and audio tools.
+Search for `Media Pack` in ComfyUI's add-node menu to find all included nodes.
 
 Install
 -------
@@ -12,7 +13,7 @@ Install
 Nodes
 -----
 
-`Concatenate Videos` appears under `video`.
+`Media Pack - Concatenate Videos` appears under `Media Pack/video`.
 
 Inputs:
 
@@ -39,7 +40,20 @@ When `overlap_seconds` is greater than `0`, the node assumes the end of
 `video_1` and the start of `video_2` contain the same content, so it removes
 that duplicate section from the beginning of `video_2`.
 
-`Slice Audio` appears under `audio`.
+`Media Pack - Video Start Clip` appears under `Media Pack/video`.
+
+Inputs:
+
+- `source_video`: native `VIDEO` input.
+- `seconds`: how many seconds to keep from the start of the video. Set this to
+  `0` to use the whole video.
+
+Outputs:
+
+- `video`: native `VIDEO` output containing the selected beginning section.
+- `images`: native `IMAGE` batch containing the selected frames.
+
+`Media Pack - Slice Audio` appears under `Media Pack/audio`.
 
 Inputs:
 
