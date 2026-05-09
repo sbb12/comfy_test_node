@@ -1,48 +1,35 @@
-ComfyUI FFmpeg Video Combiner
-=============================
+ComfyUI Video Concatenate Node
+==============================
 
-This custom node combines two video files into one output video using FFmpeg.
+This custom node takes two native ComfyUI `VIDEO` inputs and returns one native
+`VIDEO` output.
 
 Install
 -------
 
 1. Put this folder inside `ComfyUI/custom_nodes/`.
-2. Install FFmpeg and make sure `ffmpeg` and `ffprobe` are available on PATH.
-3. Restart ComfyUI.
+2. Restart ComfyUI.
 
 Node
 ----
 
-`Combine Videos (FFmpeg)` appears under `video/ffmpeg`.
+`Concatenate Videos` appears under `video`.
 
 Inputs:
 
-- `video_1`: path to the first video.
-- `video_2`: path to the second video.
-- `mode`:
-  - `concatenate`: first video followed by the second.
-  - `side_by_side`: both videos next to each other.
-  - `top_bottom`: first video above the second.
-- `audio`:
-  - `first`: use the first video's audio.
-  - `second`: use the second video's audio.
-  - `mix`: mix both audio tracks when possible.
-  - `none`: output silent video.
-- `duration`:
-  - `longest`: stacked videos continue until the longer video ends.
-  - `shortest`: stacked videos end when the shorter video ends.
-- `output_filename`: base output filename. A short unique suffix is added so runs do not overwrite each other.
-- `width` / `height`: optional target dimensions. Set to `0` for automatic sizing.
-- `fps`: output frame rate.
-- `crf`: H.264 quality. Lower is higher quality; `18` is visually high quality.
-- `preset`: H.264 encoding speed/efficiency preset.
+- `video_1`: native `VIDEO` input, such as the output from ComfyUI's built-in
+  `Load Video` node.
+- `video_2`: native `VIDEO` input.
 
 Outputs:
 
-- `output_path`: the generated video path in ComfyUI's output directory.
+- `video`: native `VIDEO` output. Connect it to ComfyUI's built-in `Save Video`
+  node to write a file.
 
 Notes
 -----
 
-Concatenate mode normalizes both videos to the same frame size and frame rate.
-If either input has no audio, concatenate mode writes a silent output video.
+The output always plays `video_1` followed by `video_2`.
+
+The first video controls the output size and frame rate. If `video_2` has a
+different resolution, it is resized to match `video_1`.
