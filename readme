@@ -20,6 +20,8 @@ Inputs:
 - `video_1`: native `VIDEO` input, such as the output from ComfyUI's built-in
   `Load Video` node.
 - `video_2`: native `VIDEO` input.
+- `overlap_seconds`: seconds to remove from the start of `video_2` before
+  joining. Leave it at `0` when there is no overlap.
 
 Outputs:
 
@@ -33,3 +35,7 @@ The output always plays `video_1` followed by `video_2`.
 
 The first video controls the output size and frame rate. If `video_2` has a
 different resolution, it is resized to match `video_1`.
+
+When `overlap_seconds` is greater than `0`, the node assumes the end of
+`video_1` and the start of `video_2` contain the same content, so it removes
+that duplicate section from the beginning of `video_2`.

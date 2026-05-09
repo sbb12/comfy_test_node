@@ -24,10 +24,20 @@ class VideoConcatenate:
             "required": {
                 "video_1": ("VIDEO", {}),
                 "video_2": ("VIDEO", {}),
+                "overlap_seconds": (
+                    "FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": 0.0,
+                        "max": 3600.0,
+                        "step": 0.01,
+                        "display": "number",
+                    },
+                ),
             },
         }
 
-    def concatenate(self, video_1, video_2):
+    def concatenate(self, video_1, video_2, overlap_seconds):
         if InputImpl is None or Types is None:
             raise ComfyVideoCombineError(
                 "ComfyUI's native video API is not available. Update ComfyUI to a "
@@ -40,6 +50,13 @@ class VideoConcatenate:
         first_images = _validate_images(_rgb_images(first.images), "video_1")
         second_images = _validate_images(_rgb_images(second.images), "video_2")
         second_images = _resize_to_match(second_images, first_images)
+        second_trim_frames = _overlap_frame_count(
+            overlap_seconds,
+            first.frame_rate,
+            second_images.shape[0],
+        )
+        second_images = second_images[second_trim_frames:]
+        second_skip_seconds = second_trim_frames / float(_frame_rate(first.frame_rate))
 
         torch, _ = _torch_modules()
         images = torch.cat((first_images, second_images), dim=0)
@@ -49,6 +66,7 @@ class VideoConcatenate:
             first.frame_rate,
             first_images.shape[0],
             second_images.shape[0],
+            second_skip_seconds,
         )
 
         video = InputImpl.VideoFromComponents(
@@ -95,7 +113,22 @@ def _resize_to_match(images, target_images):
     return resized.movedim(1, -1)
 
 
-def _concatenate_audio(first_audio, second_audio, frame_rate, first_frames, second_frames):
+def _overlap_frame_count(overlap_seconds, frame_rate, max_frames):
+    if overlap_seconds <= 0:
+        return 0
+
+    fps = float(_frame_rate(frame_rate))
+    return min(max_frames, round(overlap_seconds * fps))
+
+
+def _concatenate_audio(
+    first_audio,
+    second_audio,
+    frame_rate,
+    first_frames,
+    second_frames,
+    second_skip_seconds,
+):
     torch, _ = _torch_modules()
     first_waveform, first_sample_rate = _audio_parts(first_audio)
     second_waveform, second_sample_rate = _audio_parts(second_audio)
@@ -121,6 +154,7 @@ def _concatenate_audio(first_audio, second_audio, frame_rate, first_frames, seco
         sample_rate,
         channels,
         second_samples,
+        skip_seconds=second_skip_seconds,
     )
 
     return {
@@ -146,16 +180,26 @@ def _target_channels(first_waveform, second_waveform):
 
 def _samples_for_frames(frame_count, frame_rate, sample_rate):
     fps = float(_frame_rate(frame_rate))
-    return max(1, round((frame_count / fps) * sample_rate))
+    return max(0, round((frame_count / fps) * sample_rate))
 
 
-def _fit_audio_segment(waveform, source_rate, target_rate, channels, sample_count):
+def _fit_audio_segment(
+    waveform,
+    source_rate,
+    target_rate,
+    channels,
+    sample_count,
+    skip_seconds=0.0,
+):
     torch, functional = _torch_modules()
     if waveform is None:
         return torch.zeros((1, channels, sample_count), dtype=torch.float32)
 
     waveform = _resample_audio(waveform, source_rate, target_rate)
     waveform = _match_channels(waveform, channels)
+    if skip_seconds > 0:
+        skip_samples = round(skip_seconds * target_rate)
+        waveform = waveform[..., skip_samples:]
 
     current_samples = waveform.shape[-1]
     if current_samples > sample_count:
