@@ -17,9 +17,9 @@ Nodes
 
 Inputs:
 
-- `video_1`: native `VIDEO` input, such as the output from ComfyUI's built-in
+- `video_1`: optional native `VIDEO` input, such as the output from ComfyUI's built-in
   `Load Video` node.
-- `video_2`: native `VIDEO` input.
+- `video_2`: optional native `VIDEO` input.
 - `overlap_seconds`: seconds to remove from the start of `video_2` before
   joining. Leave it at `0` when there is no overlap.
 
@@ -32,6 +32,8 @@ Notes
 -----
 
 The output always plays `video_1` followed by `video_2`.
+If either video input is disconnected or empty, the node passes through the
+other video unchanged.
 
 The first video controls the output size and frame rate. If `video_2` has a
 different resolution, it is resized to match `video_1`.

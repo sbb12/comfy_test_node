@@ -27,8 +27,6 @@ class VideoConcatenate:
     def INPUT_TYPES(cls):
         return {
             "required": {
-                "video_1": ("VIDEO", {}),
-                "video_2": ("VIDEO", {}),
                 "overlap_seconds": (
                     "FLOAT",
                     {
@@ -40,9 +38,20 @@ class VideoConcatenate:
                     },
                 ),
             },
+            "optional": {
+                "video_1": ("VIDEO", {}),
+                "video_2": ("VIDEO", {}),
+            },
         }
 
-    def concatenate(self, video_1, video_2, overlap_seconds):
+    def concatenate(self, overlap_seconds, video_1=None, video_2=None):
+        if video_1 is None and video_2 is None:
+            raise ComfyVideoCombineError("Connect at least one video input.")
+        if video_1 is None:
+            return (video_2,)
+        if video_2 is None:
+            return (video_1,)
+
         if InputImpl is None or Types is None:
             raise ComfyVideoCombineError(
                 "ComfyUI's native video API is not available. Update ComfyUI to a "
@@ -51,6 +60,11 @@ class VideoConcatenate:
 
         first = video_1.get_components()
         second = video_2.get_components()
+
+        if _is_empty_video(first):
+            return (video_2,)
+        if _is_empty_video(second):
+            return (video_1,)
 
         first_images = _validate_images(_rgb_images(first.images), "video_1")
         second_images = _validate_images(_rgb_images(second.images), "video_2")
@@ -205,6 +219,11 @@ def _validate_images(images, input_name):
     if images.ndim != 4 or images.shape[0] == 0:
         raise ComfyVideoCombineError(f"{input_name} does not contain any video frames.")
     return images
+
+
+def _is_empty_video(components):
+    images = components.images
+    return images.ndim != 4 or images.shape[0] == 0
 
 
 def _rgb_images(images):
