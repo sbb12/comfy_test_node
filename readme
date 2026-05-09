@@ -68,3 +68,16 @@ Inputs:
 Outputs:
 
 - `audio`: native `AUDIO` output.
+
+`Media Pack - String Number List Item` appears under `Media Pack/utils`.
+
+Inputs:
+
+- `items`: multiline list where each line is `string | number`. It also accepts
+  comma-separated lines like `string, number`, or JSON lists.
+- `index`: zero-based item index to select.
+
+Outputs:
+
+- `string`: the selected item's string.
+- `number`: the selected item's number.

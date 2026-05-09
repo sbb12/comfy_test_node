@@ -1,4 +1,7 @@
 from fractions import Fraction
+import csv
+import json
+from io import StringIO
 
 
 try:
@@ -15,6 +18,7 @@ class ComfyVideoCombineError(RuntimeError):
 PACK_NAME = "Media Pack"
 VIDEO_CATEGORY = f"{PACK_NAME}/video"
 AUDIO_CATEGORY = f"{PACK_NAME}/audio"
+UTILS_CATEGORY = f"{PACK_NAME}/utils"
 
 
 class VideoConcatenate:
@@ -215,10 +219,100 @@ class AudioSlice:
         )
 
 
+class StringNumberListItem:
+    CATEGORY = UTILS_CATEGORY
+    RETURN_TYPES = ("STRING", "FLOAT")
+    RETURN_NAMES = ("string", "number")
+    FUNCTION = "select_item"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "items": (
+                    "STRING",
+                    {
+                        "default": "first item | 1\nsecond item | 2",
+                        "multiline": True,
+                    },
+                ),
+                "index": (
+                    "INT",
+                    {
+                        "default": 0,
+                        "min": 0,
+                        "max": 100000,
+                        "step": 1,
+                        "display": "number",
+                    },
+                ),
+            },
+        }
+
+    def select_item(self, items, index):
+        parsed_items = _parse_string_number_items(items)
+        if not parsed_items:
+            raise ComfyVideoCombineError("items must contain at least one item.")
+        if index >= len(parsed_items):
+            raise ComfyVideoCombineError(
+                f"index {index} is out of range for {len(parsed_items)} items."
+            )
+
+        return parsed_items[index]
+
+
 def _validate_images(images, input_name):
     if images.ndim != 4 or images.shape[0] == 0:
         raise ComfyVideoCombineError(f"{input_name} does not contain any video frames.")
     return images
+
+
+def _parse_string_number_items(items):
+    text = items.strip()
+    if not text:
+        return []
+
+    if text[0] in "[{":
+        parsed = json.loads(text)
+        return _parse_json_items(parsed)
+
+    return [_parse_delimited_item(line) for line in text.splitlines() if line.strip()]
+
+
+def _parse_json_items(parsed):
+    if isinstance(parsed, dict):
+        parsed = parsed.get("items", [])
+
+    parsed_items = []
+    for item in parsed:
+        if isinstance(item, dict):
+            string_value = item.get("string", item.get("text", item.get("label", "")))
+            number_value = item.get("number", item.get("value"))
+        elif isinstance(item, (list, tuple)) and len(item) >= 2:
+            string_value, number_value = item[0], item[1]
+        else:
+            raise ComfyVideoCombineError(
+                "JSON items must be objects or two-value arrays."
+            )
+
+        parsed_items.append((str(string_value), float(number_value)))
+
+    return parsed_items
+
+
+def _parse_delimited_item(line):
+    if "|" in line:
+        string_value, number_value = line.rsplit("|", 1)
+    else:
+        row = next(csv.reader(StringIO(line)))
+        if len(row) < 2:
+            raise ComfyVideoCombineError(
+                "Each item must be formatted as 'string | number' or 'string, number'."
+            )
+        string_value = ",".join(row[:-1])
+        number_value = row[-1]
+
+    return string_value.strip(), float(number_value.strip())
 
 
 def _is_empty_video(components):
@@ -435,12 +529,14 @@ def _torch_modules():
 
 NODE_CLASS_MAPPINGS = {
     "AudioSlice": AudioSlice,
+    "StringNumberListItem": StringNumberListItem,
     "VideoConcatenate": VideoConcatenate,
     "VideoClipSeconds": VideoClipSeconds,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AudioSlice": "Media Pack - Slice Audio",
+    "StringNumberListItem": "Media Pack - String Number List Item",
     "VideoConcatenate": "Media Pack - Concatenate Videos",
     "VideoClipSeconds": "Media Pack - Video Clip Seconds",
 }
