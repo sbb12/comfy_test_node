@@ -84,7 +84,7 @@ class VideoConcatenate:
         return (video,)
 
 
-class VideoStartClip:
+class VideoClipSeconds:
     CATEGORY = VIDEO_CATEGORY
     RETURN_TYPES = ("VIDEO", "IMAGE")
     RETURN_NAMES = ("video", "images")
@@ -98,8 +98,8 @@ class VideoStartClip:
                 "seconds": (
                     "FLOAT",
                     {
-                        "default": 1.0,
-                        "min": 0.0,
+                        "default": -1.0,
+                        "min": -36000.0,
                         "max": 36000.0,
                         "step": 0.01,
                         "display": "number",
@@ -117,13 +117,19 @@ class VideoStartClip:
 
         components = source_video.get_components()
         images = _validate_images(_rgb_images(components.images), "source_video")
-        frame_count = _duration_frame_count(
+        start_frame, frame_count = _clip_frame_range(
             seconds,
             components.frame_rate,
             images.shape[0],
         )
-        clipped_images = images[:frame_count]
-        audio = _audio_for_frames(components.audio, components.frame_rate, frame_count)
+        end_frame = start_frame + frame_count
+        clipped_images = images[start_frame:end_frame]
+        audio = _audio_for_frame_range(
+            components.audio,
+            components.frame_rate,
+            start_frame,
+            frame_count,
+        )
 
         video = InputImpl.VideoFromComponents(
             Types.VideoComponents(
@@ -237,22 +243,32 @@ def _overlap_frame_count(overlap_seconds, frame_rate, max_frames):
     return min(max_frames, round(overlap_seconds * fps))
 
 
-def _duration_frame_count(seconds, frame_rate, max_frames):
+def _clip_frame_range(seconds, frame_rate, max_frames):
     if seconds <= 0:
-        return max_frames
+        if seconds == 0:
+            return 0, max_frames
 
+        frame_count = _seconds_to_frame_count(abs(seconds), frame_rate, max_frames)
+        return max_frames - frame_count, frame_count
+
+    frame_count = _seconds_to_frame_count(seconds, frame_rate, max_frames)
+    return 0, frame_count
+
+
+def _seconds_to_frame_count(seconds, frame_rate, max_frames):
     fps = float(_frame_rate(frame_rate))
     return max(1, min(max_frames, round(seconds * fps)))
 
 
-def _audio_for_frames(audio, frame_rate, frame_count):
+def _audio_for_frame_range(audio, frame_rate, start_frame, frame_count):
     waveform, sample_rate = _audio_parts(audio)
     if waveform is None:
         return None
 
+    start_sample = _samples_for_frames(start_frame, frame_rate, sample_rate)
     sample_count = _samples_for_frames(frame_count, frame_rate, sample_rate)
     return {
-        "waveform": waveform[..., :sample_count],
+        "waveform": waveform[..., start_sample : start_sample + sample_count],
         "sample_rate": sample_rate,
     }
 
@@ -401,11 +417,11 @@ def _torch_modules():
 NODE_CLASS_MAPPINGS = {
     "AudioSlice": AudioSlice,
     "VideoConcatenate": VideoConcatenate,
-    "VideoStartClip": VideoStartClip,
+    "VideoClipSeconds": VideoClipSeconds,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AudioSlice": "Media Pack - Slice Audio",
     "VideoConcatenate": "Media Pack - Concatenate Videos",
-    "VideoStartClip": "Media Pack - Video Start Clip",
+    "VideoClipSeconds": "Media Pack - Video Clip Seconds",
 }

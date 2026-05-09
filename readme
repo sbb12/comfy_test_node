@@ -40,17 +40,18 @@ When `overlap_seconds` is greater than `0`, the node assumes the end of
 `video_1` and the start of `video_2` contain the same content, so it removes
 that duplicate section from the beginning of `video_2`.
 
-`Media Pack - Video Start Clip` appears under `Media Pack/video`.
+`Media Pack - Video Clip Seconds` appears under `Media Pack/video`.
 
 Inputs:
 
 - `source_video`: native `VIDEO` input.
-- `seconds`: how many seconds to keep from the start of the video. Set this to
-  `0` to use the whole video.
+- `seconds`: how many seconds to keep. Positive values keep from the start of
+  the video, negative values keep from the end of the video, and `0` keeps the
+  whole video.
 
 Outputs:
 
-- `video`: native `VIDEO` output containing the selected beginning section.
+- `video`: native `VIDEO` output containing the selected section.
 - `images`: native `IMAGE` batch containing the selected frames.
 
 `Media Pack - Slice Audio` appears under `Media Pack/audio`.
