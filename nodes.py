@@ -79,6 +79,66 @@ class VideoConcatenate:
         return (video,)
 
 
+class AudioSlice:
+    CATEGORY = "audio"
+    RETURN_TYPES = ("AUDIO",)
+    RETURN_NAMES = ("audio",)
+    FUNCTION = "slice_audio"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "source_audio": ("AUDIO", {}),
+                "start": (
+                    "FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": 0.0,
+                        "max": 36000.0,
+                        "step": 0.01,
+                        "display": "number",
+                    },
+                ),
+                "duration": (
+                    "FLOAT",
+                    {
+                        "default": 0.0,
+                        "min": 0.0,
+                        "max": 36000.0,
+                        "step": 0.01,
+                        "display": "number",
+                    },
+                ),
+            },
+        }
+
+    def slice_audio(self, source_audio, start, duration):
+        waveform, sample_rate = _audio_parts(source_audio)
+        if waveform is None:
+            raise ComfyVideoCombineError("source_audio does not contain audio data.")
+
+        total_samples = waveform.shape[-1]
+        start_sample = min(total_samples, round(start * sample_rate))
+        if start_sample >= total_samples:
+            raise ComfyVideoCombineError("start is beyond the end of source_audio.")
+
+        if duration <= 0:
+            end_sample = total_samples
+        else:
+            end_sample = min(total_samples, start_sample + round(duration * sample_rate))
+
+        if end_sample <= start_sample:
+            raise ComfyVideoCombineError("duration is too short to produce audio.")
+
+        return (
+            {
+                "waveform": waveform[..., start_sample:end_sample],
+                "sample_rate": sample_rate,
+            },
+        )
+
+
 def _validate_images(images, input_name):
     if images.ndim != 4 or images.shape[0] == 0:
         raise ComfyVideoCombineError(f"{input_name} does not contain any video frames.")
@@ -263,9 +323,11 @@ def _torch_modules():
 
 
 NODE_CLASS_MAPPINGS = {
+    "AudioSlice": AudioSlice,
     "VideoConcatenate": VideoConcatenate,
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
+    "AudioSlice": "Slice Audio",
     "VideoConcatenate": "Concatenate Videos",
 }

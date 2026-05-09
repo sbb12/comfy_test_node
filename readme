@@ -1,8 +1,7 @@
-ComfyUI Video Concatenate Node
-==============================
+ComfyUI Media Nodes
+===================
 
-This custom node takes two native ComfyUI `VIDEO` inputs and returns one native
-`VIDEO` output.
+This custom node pack contains small native ComfyUI video and audio tools.
 
 Install
 -------
@@ -10,8 +9,8 @@ Install
 1. Put this folder inside `ComfyUI/custom_nodes/`.
 2. Restart ComfyUI.
 
-Node
-----
+Nodes
+-----
 
 `Concatenate Videos` appears under `video`.
 
@@ -39,3 +38,16 @@ different resolution, it is resized to match `video_1`.
 When `overlap_seconds` is greater than `0`, the node assumes the end of
 `video_1` and the start of `video_2` contain the same content, so it removes
 that duplicate section from the beginning of `video_2`.
+
+`Slice Audio` appears under `audio`.
+
+Inputs:
+
+- `source_audio`: native `AUDIO` input.
+- `start`: where the cut should begin, in seconds.
+- `duration`: how long the cut should be, in seconds. Set this to `0` to slice
+  from `start` to the end of the audio.
+
+Outputs:
+
+- `audio`: native `AUDIO` output.
