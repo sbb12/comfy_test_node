@@ -73,9 +73,9 @@ Outputs:
 
 Inputs:
 
-- `items`: multiline list where each line is `string | number`. It also accepts
-  comma-separated lines like `string, number`, or JSON lists.
 - `index`: zero-based item index to select.
+- `row_0_string` and `row_0_number` through `row_19_string` and
+  `row_19_number`: separate fields for each list row.
 
 Outputs:
 
