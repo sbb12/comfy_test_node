@@ -74,18 +74,8 @@ function widgetInputElement(widget) {
     return null;
 }
 
-function syncWidgetValueFromDom(widget) {
-    const input = widgetInputElement(widget);
-    if (input && typeof input.value === "string") {
-        widget.value = input.value;
-    }
-}
-
 function rowHasText(node, rowIndex) {
     const widget = rowStringWidget(node, rowIndex);
-    if (widget) {
-        syncWidgetValueFromDom(widget);
-    }
     return String(widget?.value ?? "").trim().length > 0;
 }
 
@@ -143,11 +133,13 @@ function schedulePatch(node, delay = 0) {
 }
 
 function attachStringWidgetListeners(node) {
-    buildWidgetCache(node);
-
-    for (let rowIndex = 0; rowIndex < ROW_COUNT; rowIndex++) {
-        const widget = rowStringWidget(node, rowIndex);
-        if (!widget || widget.mediaPackDomListenersAttached) {
+    for (const widget of node.widgets ?? []) {
+        const rowIndex = rowIndexFromWidget(widget);
+        if (
+            rowIndex === null ||
+            !widget.name.endsWith("_string") ||
+            widget.mediaPackDomListenersAttached
+        ) {
             continue;
         }
 
