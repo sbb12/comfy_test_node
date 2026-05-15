@@ -238,17 +238,18 @@ class StringNumberListItem:
                     },
                 ),
             },
+            "optional": {},
         }
 
         for row_index in range(cls.ROW_COUNT):
-            inputs["required"][f"row_{row_index}_string"] = (
+            inputs["optional"][f"row_{row_index}_string"] = (
                 "STRING",
                 {
                     "default": "",
                     "multiline": True,
                 },
             )
-            inputs["required"][f"row_{row_index}_number"] = (
+            inputs["optional"][f"row_{row_index}_number"] = (
                 "FLOAT",
                 {
                     "default": 0.0,
@@ -263,8 +264,8 @@ class StringNumberListItem:
 
     def select_item(self, index, **kwargs):
         return (
-            kwargs[f"row_{index}_string"],
-            kwargs[f"row_{index}_number"],
+            kwargs.get(f"row_{index}_string", ""),
+            kwargs.get(f"row_{index}_number", 0.0),
         )
 
 

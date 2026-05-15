@@ -2,17 +2,55 @@ import { app } from "../../scripts/app.js";
 
 const NODE_NAMES = new Set(["StringNumberListItem", "sx_string_number_list_item"]);
 const ROW_COUNT = 20;
-const HIDDEN_WIDGET_SIZE = [0, -4];
+const ROW_WIDGET_RE = /^row_(\d+)_(string|number)$/;
 
-function rowStringWidget(node, rowIndex) {
-    return node.widgets?.find((widget) => widget.name === `row_${rowIndex}_string`);
+function isTargetNode(node) {
+    return (
+        NODE_NAMES.has(node.comfyClass) ||
+        NODE_NAMES.has(node.title) ||
+        NODE_NAMES.has(node.constructor?.comfyClass)
+    );
 }
 
-function rowWidgets(node, rowIndex) {
-    return [
-        rowStringWidget(node, rowIndex),
-        node.widgets?.find((widget) => widget.name === `row_${rowIndex}_number`),
-    ].filter(Boolean);
+function rowIndexFromWidget(widget) {
+    const match = widget?.name?.match(ROW_WIDGET_RE);
+    return match ? Number(match[1]) : null;
+}
+
+function buildWidgetCache(node) {
+    if (node.mediaPackWidgetCacheReady) {
+        return;
+    }
+
+    node.mediaPackBaseWidgets = [];
+    node.mediaPackRows = Array.from({ length: ROW_COUNT }, () => []);
+
+    for (const widget of node.widgets ?? []) {
+        const rowIndex = rowIndexFromWidget(widget);
+        if (rowIndex === null) {
+            node.mediaPackBaseWidgets.push(widget);
+            continue;
+        }
+
+        node.mediaPackRows[rowIndex]?.push(widget);
+    }
+
+    for (const row of node.mediaPackRows) {
+        row.sort((left, right) => {
+            const leftIsString = left.name.endsWith("_string") ? 0 : 1;
+            const rightIsString = right.name.endsWith("_string") ? 0 : 1;
+            return leftIsString - rightIsString;
+        });
+    }
+
+    node.mediaPackWidgetCacheReady = true;
+}
+
+function rowStringWidget(node, rowIndex) {
+    buildWidgetCache(node);
+    return node.mediaPackRows[rowIndex]?.find((widget) =>
+        widget.name.endsWith("_string")
+    );
 }
 
 function rowHasText(node, rowIndex) {
@@ -20,70 +58,49 @@ function rowHasText(node, rowIndex) {
     return String(widget?.value ?? "").trim().length > 0;
 }
 
-function rowShouldBeVisible(node, rowIndex) {
-    if (rowIndex === 0) {
-        return true;
-    }
+function visibleRowCount(node) {
+    let count = 1;
 
-    for (let index = 0; index < rowIndex; index++) {
-        if (!rowHasText(node, index)) {
-            return false;
+    for (let rowIndex = 0; rowIndex < ROW_COUNT - 1; rowIndex++) {
+        if (!rowHasText(node, rowIndex)) {
+            break;
         }
+        count = rowIndex + 2;
     }
 
-    return true;
-}
-
-function setElementVisible(element, visible) {
-    if (!element?.style) {
-        return;
-    }
-
-    element.style.display = visible ? "" : "none";
-}
-
-function setWidgetVisible(widget, visible) {
-    if (!widget) {
-        return;
-    }
-
-    if (!widget.mediaPackStoredOriginals) {
-        widget.mediaPackOriginalComputeSize = widget.computeSize;
-        widget.mediaPackOriginalDraw = widget.draw;
-        widget.mediaPackStoredOriginals = true;
-    }
-
-    widget.hidden = !visible;
-    widget.disabled = !visible;
-    widget.computeSize = visible
-        ? widget.mediaPackOriginalComputeSize
-        : () => HIDDEN_WIDGET_SIZE;
-    widget.draw = visible ? widget.mediaPackOriginalDraw : () => {};
-
-    setElementVisible(widget.element, visible);
-    setElementVisible(widget.inputEl, visible);
+    return Math.min(count, ROW_COUNT);
 }
 
 function refreshRows(node) {
-    let changed = false;
-
-    for (let rowIndex = 0; rowIndex < ROW_COUNT; rowIndex++) {
-        const visible = rowShouldBeVisible(node, rowIndex);
-        for (const widget of rowWidgets(node, rowIndex)) {
-            if (widget.hidden === visible) {
-                changed = true;
-            }
-            setWidgetVisible(widget, visible);
-        }
+    if (!isTargetNode(node)) {
+        return;
     }
 
-    if (changed) {
-        node.setSize?.(node.computeSize());
-        app.graph?.setDirtyCanvas(true, true);
+    buildWidgetCache(node);
+
+    const nextWidgets = [...node.mediaPackBaseWidgets];
+    const rowsToShow = visibleRowCount(node);
+
+    for (let rowIndex = 0; rowIndex < rowsToShow; rowIndex++) {
+        nextWidgets.push(...node.mediaPackRows[rowIndex]);
     }
+
+    const changed =
+        nextWidgets.length !== node.widgets.length ||
+        nextWidgets.some((widget, index) => widget !== node.widgets[index]);
+
+    if (!changed) {
+        return;
+    }
+
+    node.widgets = nextWidgets;
+    node.setSize?.(node.computeSize());
+    app.graph?.setDirtyCanvas(true, true);
 }
 
 function wrapStringWidgetCallbacks(node) {
+    buildWidgetCache(node);
+
     for (let rowIndex = 0; rowIndex < ROW_COUNT; rowIndex++) {
         const widget = rowStringWidget(node, rowIndex);
         if (!widget || widget.mediaPackWrapped) {
@@ -100,6 +117,16 @@ function wrapStringWidgetCallbacks(node) {
     }
 }
 
+function patchNode(node) {
+    if (!isTargetNode(node)) {
+        return;
+    }
+
+    buildWidgetCache(node);
+    wrapStringWidgetCallbacks(node);
+    refreshRows(node);
+}
+
 app.registerExtension({
     name: "MediaPack.StringNumberListItem",
     beforeRegisterNodeDef(nodeType, nodeData) {
@@ -113,29 +140,32 @@ app.registerExtension({
         const onNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function (...args) {
             const result = onNodeCreated?.apply(this, args);
-            wrapStringWidgetCallbacks(this);
-            refreshRows(this);
+            patchNode(this);
             return result;
         };
 
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (...args) {
             const result = onConfigure?.apply(this, args);
-            wrapStringWidgetCallbacks(this);
-            refreshRows(this);
+            this.mediaPackWidgetCacheReady = false;
+            patchNode(this);
+            return result;
+        };
+
+        const onSerialize = nodeType.prototype.onSerialize;
+        nodeType.prototype.onSerialize = function (...args) {
+            const originalWidgets = this.widgets;
+            buildWidgetCache(this);
+            this.widgets = [
+                ...this.mediaPackBaseWidgets,
+                ...this.mediaPackRows.flat(),
+            ];
+            const result = onSerialize?.apply(this, args);
+            this.widgets = originalWidgets;
             return result;
         };
     },
     nodeCreated(node) {
-        if (
-            !NODE_NAMES.has(node.comfyClass) &&
-            !NODE_NAMES.has(node.title) &&
-            !NODE_NAMES.has(node.constructor?.comfyClass)
-        ) {
-            return;
-        }
-
-        wrapStringWidgetCallbacks(node);
-        refreshRows(node);
+        patchNode(node);
     },
 });
