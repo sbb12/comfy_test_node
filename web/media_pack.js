@@ -3,12 +3,13 @@ import { app } from "../../scripts/app.js";
 const NODE_NAMES = new Set(["StringNumberListItem", "sx_string_number_list_item"]);
 const ROW_COUNT = 20;
 const ROW_WIDGET_RE = /^row_(\d+)_(string|number)$/;
+const HIDDEN_SIZE = [0, -4];
 
 function isTargetNode(node) {
     return (
         NODE_NAMES.has(node.comfyClass) ||
-        NODE_NAMES.has(node.title) ||
-        NODE_NAMES.has(node.constructor?.comfyClass)
+        NODE_NAMES.has(node.constructor?.comfyClass) ||
+        NODE_NAMES.has(node.type)
     );
 }
 
@@ -17,222 +18,152 @@ function rowIndexFromWidget(widget) {
     return match ? Number(match[1]) : null;
 }
 
-function buildWidgetCache(node) {
-    if (node.mediaPackWidgetCacheReady) {
-        return;
-    }
-
-    node.mediaPackBaseWidgets = [];
-    node.mediaPackRows = Array.from({ length: ROW_COUNT }, () => []);
-
+function collectRows(node) {
+    const rows = Array.from({ length: ROW_COUNT }, () => ({}));
     for (const widget of node.widgets ?? []) {
         const rowIndex = rowIndexFromWidget(widget);
-        if (rowIndex === null) {
-            node.mediaPackBaseWidgets.push(widget);
-            continue;
-        }
-
-        node.mediaPackRows[rowIndex]?.push(widget);
+        if (rowIndex === null) continue;
+        if (widget.name.endsWith("_string")) rows[rowIndex].string = widget;
+        else if (widget.name.endsWith("_number")) rows[rowIndex].number = widget;
     }
-
-    for (const row of node.mediaPackRows) {
-        row.sort((left, right) => {
-            const leftIsString = left.name.endsWith("_string") ? 0 : 1;
-            const rightIsString = right.name.endsWith("_string") ? 0 : 1;
-            return leftIsString - rightIsString;
-        });
-    }
-
-    node.mediaPackWidgetCacheReady = true;
+    return rows;
 }
 
-function rowStringWidget(node, rowIndex) {
-    buildWidgetCache(node);
-    return node.mediaPackRows[rowIndex]?.find((widget) =>
-        widget.name.endsWith("_string")
-    );
-}
+function setWidgetHidden(widget, hidden) {
+    if (!widget) return;
 
-function widgetInputElement(widget) {
-    const candidates = [
-        widget.inputEl,
-        widget.element,
-        widget.domElement,
-    ].filter(Boolean);
-
-    for (const candidate of candidates) {
-        if (["TEXTAREA", "INPUT"].includes(candidate.tagName)) {
-            return candidate;
+    if (hidden) {
+        if (widget._mp_hidden) return;
+        widget._mp_hidden = true;
+        widget._mp_origType = widget.type;
+        widget._mp_origComputeSize = widget.computeSize;
+        widget.type = "hidden";
+        widget.computeSize = () => HIDDEN_SIZE;
+        for (const el of [widget.element, widget.inputEl, widget.domElement]) {
+            if (el?.style) {
+                el._mp_prevDisplay = el.style.display;
+                el.style.display = "none";
+            }
         }
-
-        const input = candidate.querySelector?.("textarea,input");
-        if (input) {
-            return input;
+    } else {
+        if (!widget._mp_hidden) return;
+        widget._mp_hidden = false;
+        if (widget._mp_origType !== undefined) widget.type = widget._mp_origType;
+        if (widget._mp_origComputeSize) widget.computeSize = widget._mp_origComputeSize;
+        for (const el of [widget.element, widget.inputEl, widget.domElement]) {
+            if (el?.style) {
+                el.style.display = el._mp_prevDisplay ?? "";
+            }
         }
     }
-
-    return null;
 }
 
-function rowHasText(node, rowIndex) {
-    const widget = rowStringWidget(node, rowIndex);
-    return String(widget?.value ?? "").trim().length > 0;
-}
-
-function visibleRowCount(node) {
-    let count = 1;
-
-    for (let rowIndex = 0; rowIndex < ROW_COUNT - 1; rowIndex++) {
-        if (!rowHasText(node, rowIndex)) {
-            break;
-        }
-        count = rowIndex + 2;
+function visibleRowCount(rows) {
+    let visible = 1;
+    for (let i = 0; i < ROW_COUNT - 1; i++) {
+        const value = String(rows[i]?.string?.value ?? "").trim();
+        if (!value) break;
+        visible = i + 2;
     }
-
-    return Math.min(count, ROW_COUNT);
+    return Math.min(visible, ROW_COUNT);
 }
 
 function refreshRows(node) {
-    if (!isTargetNode(node)) {
-        return;
+    if (!isTargetNode(node)) return;
+
+    const rows = collectRows(node);
+    const visible = visibleRowCount(rows);
+
+    for (let i = 0; i < ROW_COUNT; i++) {
+        const hide = i >= visible;
+        setWidgetHidden(rows[i].string, hide);
+        setWidgetHidden(rows[i].number, hide);
     }
 
-    buildWidgetCache(node);
-
-    const nextWidgets = [...node.mediaPackBaseWidgets];
-    const rowsToShow = visibleRowCount(node);
-
-    for (let rowIndex = 0; rowIndex < rowsToShow; rowIndex++) {
-        nextWidgets.push(...node.mediaPackRows[rowIndex]);
-    }
-
-    const changed =
-        nextWidgets.length !== node.widgets.length ||
-        nextWidgets.some((widget, index) => widget !== node.widgets[index]);
-
-    if (!changed) {
-        return;
-    }
-
-    node.widgets = nextWidgets;
     node.setSize?.(node.computeSize());
-    attachStringWidgetListeners(node);
     app.graph?.setDirtyCanvas(true, true);
 }
 
-function schedulePatch(node, delay = 0) {
-    if (!isTargetNode(node) || node.mediaPackPatchScheduled) {
-        return;
-    }
-
-    node.mediaPackPatchScheduled = true;
-    setTimeout(() => {
-        node.mediaPackPatchScheduled = false;
-        patchNode(node);
-    }, delay);
+function scheduleRefresh(node) {
+    if (node._mp_refreshPending) return;
+    node._mp_refreshPending = true;
+    requestAnimationFrame(() => {
+        node._mp_refreshPending = false;
+        refreshRows(node);
+    });
 }
 
-function attachStringWidgetListeners(node) {
-    for (const widget of node.widgets ?? []) {
-        const rowIndex = rowIndexFromWidget(widget);
-        if (
-            rowIndex === null ||
-            !widget.name.endsWith("_string") ||
-            widget.mediaPackDomListenersAttached
-        ) {
-            continue;
-        }
+function widgetInputElement(widget) {
+    for (const candidate of [widget.inputEl, widget.element, widget.domElement]) {
+        if (!candidate) continue;
+        if (["TEXTAREA", "INPUT"].includes(candidate.tagName)) return candidate;
+        const found = candidate.querySelector?.("textarea,input");
+        if (found) return found;
+    }
+    return null;
+}
 
-        const input = widgetInputElement(widget);
-        if (!input) {
-            continue;
-        }
+function wireRow(node, widget) {
+    if (!widget || widget._mp_wired) return;
+    widget._mp_wired = true;
 
-        const refresh = () => {
+    const original = widget.callback;
+    widget.callback = function (...args) {
+        const result = original?.apply(this, args);
+        scheduleRefresh(node);
+        return result;
+    };
+
+    const input = widgetInputElement(widget);
+    if (input) {
+        const handler = () => {
             widget.value = input.value;
-            schedulePatch(node);
+            scheduleRefresh(node);
         };
-
-        for (const eventName of ["input", "change", "keyup", "paste"]) {
-            input.addEventListener(eventName, refresh);
+        for (const event of ["input", "change", "keyup", "paste"]) {
+            input.addEventListener(event, handler);
         }
-
-        widget.mediaPackDomListenersAttached = true;
     }
 }
 
-function wrapStringWidgetCallbacks(node) {
-    buildWidgetCache(node);
-
-    for (let rowIndex = 0; rowIndex < ROW_COUNT; rowIndex++) {
-        const widget = rowStringWidget(node, rowIndex);
-        if (!widget || widget.mediaPackWrapped) {
-            continue;
-        }
-
-        const originalCallback = widget.callback;
-        widget.callback = function (...args) {
-            const result = originalCallback?.apply(this, args);
-            refreshRows(node);
-            return result;
-        };
-        widget.mediaPackWrapped = true;
-    }
+function wireAllRows(node) {
+    const rows = collectRows(node);
+    for (const row of rows) wireRow(node, row.string);
 }
 
-function patchNode(node) {
-    if (!isTargetNode(node)) {
-        return;
-    }
-
-    buildWidgetCache(node);
-    wrapStringWidgetCallbacks(node);
-    attachStringWidgetListeners(node);
+function patch(node) {
+    if (!isTargetNode(node)) return;
+    wireAllRows(node);
     refreshRows(node);
-    setTimeout(() => attachStringWidgetListeners(node), 100);
+    // Some DOM widgets attach their input element asynchronously.
+    setTimeout(() => {
+        wireAllRows(node);
+        refreshRows(node);
+    }, 100);
 }
 
 app.registerExtension({
     name: "MediaPack.StringNumberListItem",
     beforeRegisterNodeDef(nodeType, nodeData) {
-        if (
-            !NODE_NAMES.has(nodeData.name) &&
-            !NODE_NAMES.has(nodeData.display_name)
-        ) {
+        if (!NODE_NAMES.has(nodeData.name) && !NODE_NAMES.has(nodeData.display_name)) {
             return;
         }
 
         const onNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function (...args) {
             const result = onNodeCreated?.apply(this, args);
-            schedulePatch(this);
+            requestAnimationFrame(() => patch(this));
             return result;
         };
 
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (...args) {
             const result = onConfigure?.apply(this, args);
-            this.mediaPackWidgetCacheReady = false;
-            schedulePatch(this);
+            requestAnimationFrame(() => patch(this));
             return result;
-        };
-
-        const onSerialize = nodeType.prototype.onSerialize;
-        nodeType.prototype.onSerialize = function (...args) {
-            const originalWidgets = this.widgets;
-            buildWidgetCache(this);
-            this.widgets = [
-                ...this.mediaPackBaseWidgets,
-                ...this.mediaPackRows.flat(),
-            ];
-            try {
-                return onSerialize?.apply(this, args);
-            } finally {
-                this.widgets = originalWidgets;
-            }
         };
     },
     nodeCreated(node) {
-        schedulePatch(node);
+        if (isTargetNode(node)) requestAnimationFrame(() => patch(node));
     },
 });
