@@ -53,8 +53,39 @@ function rowStringWidget(node, rowIndex) {
     );
 }
 
+function widgetInputElement(widget) {
+    const candidates = [
+        widget.inputEl,
+        widget.element,
+        widget.domElement,
+    ].filter(Boolean);
+
+    for (const candidate of candidates) {
+        if (["TEXTAREA", "INPUT"].includes(candidate.tagName)) {
+            return candidate;
+        }
+
+        const input = candidate.querySelector?.("textarea,input");
+        if (input) {
+            return input;
+        }
+    }
+
+    return null;
+}
+
+function syncWidgetValueFromDom(widget) {
+    const input = widgetInputElement(widget);
+    if (input && typeof input.value === "string") {
+        widget.value = input.value;
+    }
+}
+
 function rowHasText(node, rowIndex) {
     const widget = rowStringWidget(node, rowIndex);
+    if (widget) {
+        syncWidgetValueFromDom(widget);
+    }
     return String(widget?.value ?? "").trim().length > 0;
 }
 
@@ -95,7 +126,35 @@ function refreshRows(node) {
 
     node.widgets = nextWidgets;
     node.setSize?.(node.computeSize());
+    attachStringWidgetListeners(node);
     app.graph?.setDirtyCanvas(true, true);
+}
+
+function attachStringWidgetListeners(node) {
+    buildWidgetCache(node);
+
+    for (let rowIndex = 0; rowIndex < ROW_COUNT; rowIndex++) {
+        const widget = rowStringWidget(node, rowIndex);
+        if (!widget || widget.mediaPackDomListenersAttached) {
+            continue;
+        }
+
+        const input = widgetInputElement(widget);
+        if (!input) {
+            continue;
+        }
+
+        const refresh = () => {
+            widget.value = input.value;
+            setTimeout(() => refreshRows(node), 0);
+        };
+
+        for (const eventName of ["input", "change", "keyup", "paste"]) {
+            input.addEventListener(eventName, refresh);
+        }
+
+        widget.mediaPackDomListenersAttached = true;
+    }
 }
 
 function wrapStringWidgetCallbacks(node) {
@@ -124,6 +183,7 @@ function patchNode(node) {
 
     buildWidgetCache(node);
     wrapStringWidgetCallbacks(node);
+    attachStringWidgetListeners(node);
     refreshRows(node);
 }
 
@@ -162,6 +222,13 @@ app.registerExtension({
             ];
             const result = onSerialize?.apply(this, args);
             this.widgets = originalWidgets;
+            return result;
+        };
+
+        const onDrawForeground = nodeType.prototype.onDrawForeground;
+        nodeType.prototype.onDrawForeground = function (...args) {
+            const result = onDrawForeground?.apply(this, args);
+            patchNode(this);
             return result;
         };
     },
