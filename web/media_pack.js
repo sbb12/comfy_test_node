@@ -1,6 +1,6 @@
 import { app } from "../../scripts/app.js";
 
-const NODE_NAME = "StringNumberListItem";
+const NODE_NAMES = new Set(["StringNumberListItem", "sx_string_number_list_item"]);
 const ROW_COUNT = 20;
 const HIDDEN_WIDGET_SIZE = [0, -4];
 
@@ -47,8 +47,10 @@ function setWidgetVisible(widget, visible) {
         return;
     }
 
-    if (!widget.mediaPackOriginalComputeSize) {
+    if (!widget.mediaPackStoredOriginals) {
         widget.mediaPackOriginalComputeSize = widget.computeSize;
+        widget.mediaPackOriginalDraw = widget.draw;
+        widget.mediaPackStoredOriginals = true;
     }
 
     widget.hidden = !visible;
@@ -56,6 +58,7 @@ function setWidgetVisible(widget, visible) {
     widget.computeSize = visible
         ? widget.mediaPackOriginalComputeSize
         : () => HIDDEN_WIDGET_SIZE;
+    widget.draw = visible ? widget.mediaPackOriginalDraw : () => {};
 
     setElementVisible(widget.element, visible);
     setElementVisible(widget.inputEl, visible);
@@ -100,7 +103,10 @@ function wrapStringWidgetCallbacks(node) {
 app.registerExtension({
     name: "MediaPack.StringNumberListItem",
     beforeRegisterNodeDef(nodeType, nodeData) {
-        if (nodeData.name !== NODE_NAME) {
+        if (
+            !NODE_NAMES.has(nodeData.name) &&
+            !NODE_NAMES.has(nodeData.display_name)
+        ) {
             return;
         }
 
@@ -119,5 +125,17 @@ app.registerExtension({
             refreshRows(this);
             return result;
         };
+    },
+    nodeCreated(node) {
+        if (
+            !NODE_NAMES.has(node.comfyClass) &&
+            !NODE_NAMES.has(node.title) &&
+            !NODE_NAMES.has(node.constructor?.comfyClass)
+        ) {
+            return;
+        }
+
+        wrapStringWidgetCallbacks(node);
+        refreshRows(node);
     },
 });
