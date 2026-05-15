@@ -130,6 +130,18 @@ function refreshRows(node) {
     app.graph?.setDirtyCanvas(true, true);
 }
 
+function schedulePatch(node, delay = 0) {
+    if (!isTargetNode(node) || node.mediaPackPatchScheduled) {
+        return;
+    }
+
+    node.mediaPackPatchScheduled = true;
+    setTimeout(() => {
+        node.mediaPackPatchScheduled = false;
+        patchNode(node);
+    }, delay);
+}
+
 function attachStringWidgetListeners(node) {
     buildWidgetCache(node);
 
@@ -146,7 +158,7 @@ function attachStringWidgetListeners(node) {
 
         const refresh = () => {
             widget.value = input.value;
-            setTimeout(() => refreshRows(node), 0);
+            schedulePatch(node);
         };
 
         for (const eventName of ["input", "change", "keyup", "paste"]) {
@@ -185,6 +197,7 @@ function patchNode(node) {
     wrapStringWidgetCallbacks(node);
     attachStringWidgetListeners(node);
     refreshRows(node);
+    setTimeout(() => attachStringWidgetListeners(node), 100);
 }
 
 app.registerExtension({
@@ -200,7 +213,7 @@ app.registerExtension({
         const onNodeCreated = nodeType.prototype.onNodeCreated;
         nodeType.prototype.onNodeCreated = function (...args) {
             const result = onNodeCreated?.apply(this, args);
-            patchNode(this);
+            schedulePatch(this);
             return result;
         };
 
@@ -208,7 +221,7 @@ app.registerExtension({
         nodeType.prototype.onConfigure = function (...args) {
             const result = onConfigure?.apply(this, args);
             this.mediaPackWidgetCacheReady = false;
-            patchNode(this);
+            schedulePatch(this);
             return result;
         };
 
@@ -220,19 +233,14 @@ app.registerExtension({
                 ...this.mediaPackBaseWidgets,
                 ...this.mediaPackRows.flat(),
             ];
-            const result = onSerialize?.apply(this, args);
-            this.widgets = originalWidgets;
-            return result;
-        };
-
-        const onDrawForeground = nodeType.prototype.onDrawForeground;
-        nodeType.prototype.onDrawForeground = function (...args) {
-            const result = onDrawForeground?.apply(this, args);
-            patchNode(this);
-            return result;
+            try {
+                return onSerialize?.apply(this, args);
+            } finally {
+                this.widgets = originalWidgets;
+            }
         };
     },
     nodeCreated(node) {
-        patchNode(node);
+        schedulePatch(node);
     },
 });
