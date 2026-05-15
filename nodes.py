@@ -249,8 +249,28 @@ class LastImages:
 
 class StringNumberListItem:
     CATEGORY = UTILS_CATEGORY
-    RETURN_TYPES = ("STRING", "FLOAT")
-    RETURN_NAMES = ("string", "number")
+    RETURN_TYPES = (
+        "STRING",
+        "FLOAT",
+        "INT",
+        "BOOLEAN",
+        "BOOLEAN",
+        "BOOLEAN",
+        "FLOAT",
+        "FLOAT",
+        "INT",
+    )
+    RETURN_NAMES = (
+        "string",
+        "number",
+        "index",
+        "is_first",
+        "is_last",
+        "is_valid",
+        "sum_before",
+        "sum_through",
+        "next_index",
+    )
     FUNCTION = "select_item"
     ROW_COUNT = 20
 
@@ -294,9 +314,23 @@ class StringNumberListItem:
         return inputs
 
     def select_item(self, index, **kwargs):
+        string_value = kwargs.get(f"row_{index}_string", "")
+        number_value = float(kwargs.get(f"row_{index}_number", 0.0))
+        is_valid = _row_is_valid(string_value, number_value)
+        last_valid_index = _last_valid_row_index(self.ROW_COUNT, kwargs)
+        sum_before = _sum_valid_numbers_before(index, kwargs)
+        sum_through = sum_before + number_value if is_valid else sum_before
+
         return (
-            kwargs.get(f"row_{index}_string", ""),
-            kwargs.get(f"row_{index}_number", 0.0),
+            string_value,
+            number_value,
+            index,
+            index == 0,
+            index == last_valid_index,
+            is_valid,
+            sum_before,
+            sum_through,
+            min(index + 1, self.ROW_COUNT - 1),
         )
 
 
@@ -304,6 +338,32 @@ def _validate_images(images, input_name):
     if images.ndim != 4 or images.shape[0] == 0:
         raise ComfyVideoCombineError(f"{input_name} does not contain any video frames.")
     return images
+
+
+def _row_is_valid(string_value, number_value):
+    return bool(string_value.strip()) and number_value > 0
+
+
+def _sum_valid_numbers_before(index, rows):
+    total = 0.0
+    for row_index in range(index):
+        string_value = rows.get(f"row_{row_index}_string", "")
+        number_value = float(rows.get(f"row_{row_index}_number", 0.0))
+        if _row_is_valid(string_value, number_value):
+            total += number_value
+
+    return total
+
+
+def _last_valid_row_index(row_count, rows):
+    last_index = -1
+    for row_index in range(row_count):
+        string_value = rows.get(f"row_{row_index}_string", "")
+        number_value = float(rows.get(f"row_{row_index}_number", 0.0))
+        if _row_is_valid(string_value, number_value):
+            last_index = row_index
+
+    return last_index
 
 
 def _is_empty_video(components):

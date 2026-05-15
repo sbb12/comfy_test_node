@@ -94,5 +94,12 @@ field reveals the next row.
 
 Outputs:
 
-- `string`: the selected item's string.
-- `number`: the selected item's number.
+- `string`: the selected row's prompt/text.
+- `number`: the selected row's number.
+- `index`: the selected index, passed through.
+- `is_first`: true when the selected index is `0`.
+- `is_last`: true when the selected row is the last valid row.
+- `is_valid`: true when the selected row has text and a positive number.
+- `sum_before`: sum of valid row numbers before the selected index.
+- `sum_through`: `sum_before` plus the selected row's number when valid.
+- `next_index`: index value for the next loop iteration.
