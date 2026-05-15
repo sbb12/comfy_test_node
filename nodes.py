@@ -245,7 +245,7 @@ class StringNumberListItem:
                 "STRING",
                 {
                     "default": "",
-                    "multiline": False,
+                    "multiline": True,
                 },
             )
             inputs["required"][f"row_{row_index}_number"] = (
@@ -494,8 +494,8 @@ NODE_CLASS_MAPPINGS = {
 }
 
 NODE_DISPLAY_NAME_MAPPINGS = {
-    "AudioSlice": "Media Pack - Slice Audio",
-    "StringNumberListItem": "Media Pack - String Number List Item",
-    "VideoConcatenate": "Media Pack - Concatenate Videos",
-    "VideoClipSeconds": "Media Pack - Video Clip Seconds",
+    "AudioSlice": "sx_slice_audio",
+    "StringNumberListItem": "sx_string_number_list_item",
+    "VideoConcatenate": "sx_concatenate_videos",
+    "VideoClipSeconds": "sx_video_clip_seconds",
 }

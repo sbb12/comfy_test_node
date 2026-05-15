@@ -2,7 +2,7 @@ ComfyUI Media Nodes
 ===================
 
 This custom node pack contains small native ComfyUI video and audio tools.
-Search for `Media Pack` in ComfyUI's add-node menu to find all included nodes.
+Search for `sx_` in ComfyUI's add-node menu to find all included nodes.
 
 Install
 -------
@@ -13,7 +13,7 @@ Install
 Nodes
 -----
 
-`Media Pack - Concatenate Videos` appears under `Media Pack/video`.
+`sx_concatenate_videos` appears under `Media Pack/video`.
 
 Inputs:
 
@@ -42,7 +42,7 @@ When `overlap_seconds` is greater than `0`, the node assumes the end of
 `video_1` and the start of `video_2` contain the same content, so it removes
 that duplicate section from the beginning of `video_2`.
 
-`Media Pack - Video Clip Seconds` appears under `Media Pack/video`.
+`sx_video_clip_seconds` appears under `Media Pack/video`.
 
 Inputs:
 
@@ -56,7 +56,7 @@ Outputs:
 - `video`: native `VIDEO` output containing the selected section.
 - `images`: native `IMAGE` batch containing the selected frames.
 
-`Media Pack - Slice Audio` appears under `Media Pack/audio`.
+`sx_slice_audio` appears under `Media Pack/audio`.
 
 Inputs:
 
@@ -69,13 +69,17 @@ Outputs:
 
 - `audio`: native `AUDIO` output.
 
-`Media Pack - String Number List Item` appears under `Media Pack/utils`.
+`sx_string_number_list_item` appears under `Media Pack/utils`.
 
 Inputs:
 
 - `index`: zero-based item index to select.
 - `row_0_string` and `row_0_number` through `row_19_string` and
   `row_19_number`: separate fields for each list row.
+
+The row string fields are multiline text areas. To keep the node compact,
+only row `0` and the next available empty row are shown; filling a row's string
+field reveals the next row.
 
 Outputs:
 
