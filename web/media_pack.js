@@ -14,164 +14,81 @@ function isTargetNode(node) {
     );
 }
 
-function rowIndexFromName(name) {
-    const match = name?.match(ROW_WIDGET_RE);
+function rowIndexFromWidget(widget) {
+    const match = widget?.name?.match(ROW_WIDGET_RE);
     return match ? Number(match[1]) : null;
 }
 
-function ensureStore(node) {
-    if (!node._mp) {
-        node._mp = {
-            hiddenWidgets: new Map(), // name -> widget
-            hiddenInputs: new Map(),  // name -> { input, index }
-            wired: new Set(),
-        };
-    }
-    return node._mp;
-}
-
-function allWidgetsAndInputs(node) {
-    // Union of currently-visible widgets and any we've hidden away.
-    const store = ensureStore(node);
-    const widgets = new Map();
+function collectRows(node) {
+    const rows = Array.from({ length: ROW_COUNT }, () => ({}));
     for (const widget of node.widgets ?? []) {
-        if (widget?.name) widgets.set(widget.name, widget);
+        const rowIndex = rowIndexFromWidget(widget);
+        if (rowIndex === null) continue;
+        if (widget.name.endsWith("_string")) rows[rowIndex].string = widget;
+        else if (widget.name.endsWith("_number")) rows[rowIndex].number = widget;
     }
-    for (const [name, widget] of store.hiddenWidgets) widgets.set(name, widget);
-
-    const inputs = new Map();
-    for (const input of node.inputs ?? []) {
-        if (input?.name) inputs.set(input.name, input);
-    }
-    for (const [name, { input }] of store.hiddenInputs) inputs.set(name, input);
-
-    return { widgets, inputs };
+    return rows;
 }
 
-function rowStringValue(node, rowIndex) {
-    const { widgets } = allWidgetsAndInputs(node);
-    const widget = widgets.get(`row_${rowIndex}_string`);
-    return String(widget?.value ?? "").trim();
+function setWidgetHidden(widget, hidden) {
+    if (!widget) return false;
+    const already = !!widget._mp_hidden;
+    if (already === hidden) return false;
+
+    if (hidden) {
+        widget._mp_hidden = true;
+        widget._mp_origType = widget.type;
+        widget._mp_origComputeSize = widget.computeSize;
+        widget.type = "hidden";
+        widget.hidden = true;
+        widget.computeSize = () => HIDDEN_SIZE;
+        widget.computedHeight = 0;
+        for (const el of [widget.element, widget.inputEl, widget.domElement]) {
+            if (el?.style) {
+                el._mp_prevDisplay = el.style.display;
+                el.style.display = "none";
+            }
+        }
+    } else {
+        widget._mp_hidden = false;
+        widget.hidden = false;
+        if (widget._mp_origType !== undefined) widget.type = widget._mp_origType;
+        if (widget._mp_origComputeSize) widget.computeSize = widget._mp_origComputeSize;
+        delete widget.computedHeight;
+        for (const el of [widget.element, widget.inputEl, widget.domElement]) {
+            if (el?.style) el.style.display = el._mp_prevDisplay ?? "";
+        }
+    }
+    return true;
 }
 
-function visibleRowCount(node) {
+function visibleRowCount(rows) {
     let visible = 1;
     for (let i = 0; i < ROW_COUNT - 1; i++) {
-        if (!rowStringValue(node, i)) break;
+        const value = String(rows[i]?.string?.value ?? "").trim();
+        if (!value) break;
         visible = i + 2;
     }
     return Math.min(visible, ROW_COUNT);
 }
 
-function hideWidget(node, name) {
-    const store = ensureStore(node);
-    if (store.hiddenWidgets.has(name)) return;
-    const idx = node.widgets?.findIndex((w) => w?.name === name) ?? -1;
-    if (idx < 0) return;
-    const [widget] = node.widgets.splice(idx, 1);
-    store.hiddenWidgets.set(name, widget);
-    for (const el of [widget.element, widget.inputEl, widget.domElement]) {
-        if (el?.style) {
-            el._mp_prevDisplay = el.style.display;
-            el.style.display = "none";
-        }
-    }
-}
-
-function showWidget(node, name) {
-    const store = ensureStore(node);
-    const widget = store.hiddenWidgets.get(name);
-    if (!widget) return;
-    store.hiddenWidgets.delete(name);
-    if (!node.widgets) node.widgets = [];
-    // Reinsert preserving original row order: append, then sort below.
-    node.widgets.push(widget);
-    for (const el of [widget.element, widget.inputEl, widget.domElement]) {
-        if (el?.style) el.style.display = el._mp_prevDisplay ?? "";
-    }
-}
-
-function hideInput(node, name) {
-    const store = ensureStore(node);
-    if (store.hiddenInputs.has(name)) return;
-    const idx = node.inputs?.findIndex((i) => i?.name === name) ?? -1;
-    if (idx < 0) return;
-    const [input] = node.inputs.splice(idx, 1);
-    store.hiddenInputs.set(name, { input, index: idx });
-}
-
-function showInput(node, name) {
-    const store = ensureStore(node);
-    const entry = store.hiddenInputs.get(name);
-    if (!entry) return;
-    store.hiddenInputs.delete(name);
-    if (!node.inputs) node.inputs = [];
-    const insertAt = Math.min(entry.index, node.inputs.length);
-    node.inputs.splice(insertAt, 0, entry.input);
-}
-
-function sortWidgetsByOriginalOrder(node) {
-    if (!node.widgets) return;
-    const baseOrder = (name) => {
-        const rowIdx = rowIndexFromName(name);
-        if (rowIdx === null) return -1; // base widgets stay above rows
-        const isNumber = name.endsWith("_number") ? 1 : 0;
-        return rowIdx * 2 + isNumber;
-    };
-    node.widgets.sort((a, b) => {
-        const ai = baseOrder(a.name);
-        const bi = baseOrder(b.name);
-        if (ai === -1 && bi === -1) return 0;
-        if (ai === -1) return -1;
-        if (bi === -1) return 1;
-        return ai - bi;
-    });
-}
-
-function sortInputsByOriginalOrder(node) {
-    if (!node.inputs) return;
-    const order = (name) => {
-        const rowIdx = rowIndexFromName(name);
-        if (rowIdx === null) return -1;
-        const isNumber = name.endsWith("_number") ? 1 : 0;
-        return rowIdx * 2 + isNumber;
-    };
-    node.inputs.sort((a, b) => {
-        const ai = order(a.name);
-        const bi = order(b.name);
-        if (ai === -1 && bi === -1) return 0;
-        if (ai === -1) return -1;
-        if (bi === -1) return 1;
-        return ai - bi;
-    });
-}
-
 function refreshRows(node) {
     if (!isTargetNode(node)) return;
 
-    const visible = visibleRowCount(node);
+    const rows = collectRows(node);
+    const visible = visibleRowCount(rows);
 
+    let changed = false;
     for (let i = 0; i < ROW_COUNT; i++) {
-        const stringName = `row_${i}_string`;
-        const numberName = `row_${i}_number`;
-        if (i < visible) {
-            showWidget(node, stringName);
-            showWidget(node, numberName);
-            showInput(node, stringName);
-            showInput(node, numberName);
-        } else {
-            hideWidget(node, stringName);
-            hideWidget(node, numberName);
-            hideInput(node, stringName);
-            hideInput(node, numberName);
-        }
+        const hide = i >= visible;
+        if (setWidgetHidden(rows[i].string, hide)) changed = true;
+        if (setWidgetHidden(rows[i].number, hide)) changed = true;
     }
 
-    sortWidgetsByOriginalOrder(node);
-    sortInputsByOriginalOrder(node);
-
-    node.setSize?.(node.computeSize());
-    app.graph?.setDirtyCanvas(true, true);
+    if (changed) {
+        node.setSize?.(node.computeSize());
+        app.graph?.setDirtyCanvas(true, true);
+    }
 }
 
 function scheduleRefresh(node) {
@@ -193,10 +110,9 @@ function widgetInputElement(widget) {
     return null;
 }
 
-function wireWidget(node, widget) {
-    const store = ensureStore(node);
-    if (!widget || store.wired.has(widget)) return;
-    store.wired.add(widget);
+function wireRow(node, widget) {
+    if (!widget || widget._mp_wired) return;
+    widget._mp_wired = true;
 
     const original = widget.callback;
     widget.callback = function (...args) {
@@ -206,42 +122,26 @@ function wireWidget(node, widget) {
     };
 
     const input = widgetInputElement(widget);
-    if (input) {
+    if (input && !input._mp_listenersAttached) {
+        input._mp_listenersAttached = true;
         const handler = () => {
             widget.value = input.value;
             scheduleRefresh(node);
         };
-        for (const event of ["input", "change", "keyup", "paste"]) {
-            input.addEventListener(event, handler);
-        }
+        input.addEventListener("input", handler);
+        input.addEventListener("change", handler);
     }
 }
 
 function wireAllStringWidgets(node) {
-    const { widgets } = allWidgetsAndInputs(node);
-    for (const [name, widget] of widgets) {
-        if (name.endsWith("_string")) wireWidget(node, widget);
-    }
-}
-
-function restoreAllForSerialization(node) {
-    const store = ensureStore(node);
-    const hiddenWidgetNames = [...store.hiddenWidgets.keys()];
-    const hiddenInputNames = [...store.hiddenInputs.keys()];
-    for (const name of hiddenWidgetNames) showWidget(node, name);
-    for (const name of hiddenInputNames) showInput(node, name);
-    sortWidgetsByOriginalOrder(node);
-    sortInputsByOriginalOrder(node);
+    for (const row of collectRows(node)) wireRow(node, row.string);
 }
 
 function patch(node) {
-    if (!isTargetNode(node)) return;
+    if (!isTargetNode(node) || node._mp_patched) return;
+    node._mp_patched = true;
     wireAllStringWidgets(node);
     refreshRows(node);
-    setTimeout(() => {
-        wireAllStringWidgets(node);
-        refreshRows(node);
-    }, 150);
 }
 
 app.registerExtension({
@@ -261,23 +161,9 @@ app.registerExtension({
         const onConfigure = nodeType.prototype.onConfigure;
         nodeType.prototype.onConfigure = function (...args) {
             const result = onConfigure?.apply(this, args);
+            this._mp_patched = false;
             requestAnimationFrame(() => patch(this));
             return result;
         };
-
-        const onSerialize = nodeType.prototype.onSerialize;
-        nodeType.prototype.onSerialize = function (...args) {
-            // Temporarily un-hide everything so the workflow saves the full
-            // widget/input set, then re-apply visibility.
-            restoreAllForSerialization(this);
-            try {
-                return onSerialize?.apply(this, args);
-            } finally {
-                refreshRows(this);
-            }
-        };
-    },
-    nodeCreated(node) {
-        if (isTargetNode(node)) requestAnimationFrame(() => patch(node));
     },
 });

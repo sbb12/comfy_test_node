@@ -69,6 +69,17 @@ Outputs:
 
 - `audio`: native `AUDIO` output.
 
+`sx_last_images` appears under `Media Pack/image`.
+
+Inputs:
+
+- `images`: native `IMAGE` batch.
+- `count`: number of images to take from the end of the batch.
+
+Outputs:
+
+- `images`: the last `count` images from the input batch.
+
 `sx_string_number_list_item` appears under `Media Pack/utils`.
 
 Inputs:

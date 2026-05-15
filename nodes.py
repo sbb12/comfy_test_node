@@ -15,6 +15,7 @@ class ComfyVideoCombineError(RuntimeError):
 PACK_NAME = "Media Pack"
 VIDEO_CATEGORY = f"{PACK_NAME}/video"
 AUDIO_CATEGORY = f"{PACK_NAME}/audio"
+IMAGE_CATEGORY = f"{PACK_NAME}/image"
 UTILS_CATEGORY = f"{PACK_NAME}/utils"
 
 
@@ -214,6 +215,36 @@ class AudioSlice:
                 "sample_rate": sample_rate,
             },
         )
+
+
+class LastImages:
+    CATEGORY = IMAGE_CATEGORY
+    RETURN_TYPES = ("IMAGE",)
+    RETURN_NAMES = ("images",)
+    FUNCTION = "last_images"
+
+    @classmethod
+    def INPUT_TYPES(cls):
+        return {
+            "required": {
+                "images": ("IMAGE", {}),
+                "count": (
+                    "INT",
+                    {
+                        "default": 1,
+                        "min": 1,
+                        "max": 100000,
+                        "step": 1,
+                        "display": "number",
+                    },
+                ),
+            },
+        }
+
+    def last_images(self, images, count):
+        images = _validate_images(images, "images")
+        count = min(count, images.shape[0])
+        return (images[-count:],)
 
 
 class StringNumberListItem:
@@ -489,6 +520,7 @@ def _torch_modules():
 
 NODE_CLASS_MAPPINGS = {
     "AudioSlice": AudioSlice,
+    "LastImages": LastImages,
     "StringNumberListItem": StringNumberListItem,
     "VideoConcatenate": VideoConcatenate,
     "VideoClipSeconds": VideoClipSeconds,
@@ -496,6 +528,7 @@ NODE_CLASS_MAPPINGS = {
 
 NODE_DISPLAY_NAME_MAPPINGS = {
     "AudioSlice": "sx_slice_audio",
+    "LastImages": "sx_last_images",
     "StringNumberListItem": "sx_string_number_list_item",
     "VideoConcatenate": "sx_concatenate_videos",
     "VideoClipSeconds": "sx_video_clip_seconds",
